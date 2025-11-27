@@ -6,7 +6,7 @@ exports.up = function(knex) {
   return knex.schema.createTable('users', function(table) {
     table.string('discord_id').primary();
     table.string('minecraft_username');
-    table.string('team_id');
+    table.integer('team_id').unsigned().references('id').inTable('teams').onDelete('SET NULL');
   });
 };
 
