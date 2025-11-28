@@ -1,10 +1,11 @@
-require('dotenv').config();
+require('dotenv').config({ quiet: true });
 
-const { Client, GatewayIntentBits, ChannelType, PermissionsBitField, ActionRowBuilder, StringSelectMenuBuilder, ModalBuilder, TextInputBuilder, TextInputStyle, InteractionType, REST, Routes, SlashCommandBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, ChannelType, PermissionsBitField, ModalBuilder, TextInputBuilder, TextInputStyle, InteractionType, REST, Routes } = require('discord.js');
 const knexConfig = require('./knexfile');
+const fs = require('fs');
+const path = require('path');
 
 const knex = require('knex')(knexConfig.development);
-
 const token = process.env.DISCORD_TOKEN;
 
 const client = new Client({
@@ -18,78 +19,34 @@ const client = new Client({
 });
 
 const tempChannels = new Map();
+const commands = new Map();
+const commandsData = [];
 
-const commands = [
-    new SlashCommandBuilder()
-        .setName('add-team')
-        .setDescription('Ajoute une équipe')
-        .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
-        .addStringOption(option =>
-            option.setName('label')
-                .setDescription('Nom de l\'équipe')
-                .setRequired(true))
-        .addRoleOption(option =>
-            option.setName('role')
-                .setDescription('Rôle Discord')
-                .setRequired(true)),
+// Charger toutes les commandes
+const commandFiles = fs.readdirSync(path.join(__dirname, 'commands')).filter(file => file.endsWith('.js'));
+for (const file of commandFiles) {
+    const command = require(`./commands/${file}`);
+    commands.set(command.data.name, command);
+    commandsData.push(command.data.toJSON());
+}
 
-    new SlashCommandBuilder()
-        .setName('remove-team')
-        .setDescription('Supprime une équipe')
-        .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
-        .addStringOption(option =>
-            option.setName('label')
-                .setDescription('Nom de l\'équipe')
-                .setRequired(true)),
+const { handleInscription } = require('./utils/inscription-handler');
+const { sendMinecraftCommand} = require('./utils/pterodactyl');
 
-    new SlashCommandBuilder()
-        .setName('list-teams')
-        .setDescription('Liste les équipes')
-        .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-
-    new SlashCommandBuilder()
-        .setName('add-channel')
-        .setDescription('Ajoute un salon de déclenchement')
-        .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
-        .addChannelOption(option =>
-            option.setName('channel')
-                .setDescription('Salon vocal')
-                .setRequired(true)),
-
-    new SlashCommandBuilder()
-        .setName('remove-channel')
-        .setDescription('Supprime un salon de déclenchement')
-        .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
-        .addChannelOption(option =>
-            option.setName('channel')
-                .setDescription('Salon à supprimer')
-                .setRequired(true)),
-
-    new SlashCommandBuilder()
-        .setName('list-channels')
-        .setDescription('Liste les salons')
-        .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
-
-    new SlashCommandBuilder()
-        .setName('setup-inscription')
-        .setDescription('Envoie le formulaire d\'inscription')
-        .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
-        .addChannelOption(option =>
-            option.setName('channel')
-                .setDescription('Salon où envoyer le formulaire')
-                .setRequired(true))
-        .addRoleOption(option =>
-            option.setName('role_inscrit')
-                .setDescription('Rôle "Inscrit" à donner')
-                .setRequired(true))
-].map(command => command.toJSON());
-
-client.once('ready', async () => {
+client.once('clientReady', async () => {
     try {
         await knex.migrate.latest();
+
+        const appState = await knex('app_state').first();
+        if (!appState) {
+            await knex('app_state').insert({ release: false });
+        }
+
         const rest = new REST({ version: '10' }).setToken(token);
-        await rest.put(Routes.applicationCommands(client.user.id), { body: commands });
+        await rest.put(Routes.applicationCommands(client.user.id), { body: commandsData });
         console.log(`Connecté: ${client.user.tag}`);
+
+        await sendMinecraftCommand(process.env.PT_SERVER_ID, 'say Bot connecté');
     } catch (error) {
         console.error('Erreur:', error);
     }
@@ -139,174 +96,15 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
 });
 
-async function createInscriptionMessage(channel) {
-    const teams = await knex('teams').select('*');
-
-    if (teams.length === 0) {
-        return null;
-    }
-
-    const row = new ActionRowBuilder()
-        .addComponents(
-            new StringSelectMenuBuilder()
-                .setCustomId('select_team')
-                .setPlaceholder('Choisissez votre équipe')
-                .addOptions(
-                    teams.map(team => ({
-                        label: team.label,
-                        value: team.id.toString(),
-                    }))
-                ),
-        );
-
-    return await channel.send({
-        content: 'Choisissez votre équipe pour vous inscrire.',
-        components: [row]
-    });
-}
-
-async function updateInscriptionMessages() {
-    const messages = await knex('inscription_messages').select('*');
-    const teams = await knex('teams').select('*');
-
-    if (teams.length === 0) {
-        return;
-    }
-
-    const row = new ActionRowBuilder()
-        .addComponents(
-            new StringSelectMenuBuilder()
-                .setCustomId('select_team')
-                .setPlaceholder('Choisissez votre équipe')
-                .addOptions(
-                    teams.map(team => ({
-                        label: team.label,
-                        value: team.id.toString(),
-                    }))
-                ),
-        );
-
-    for (const msg of messages) {
-        try {
-            const channel = await client.channels.fetch(msg.channel_id);
-            const message = await channel.messages.fetch(msg.message_id);
-            await message.edit({
-                content: 'Choisissez votre équipe pour vous inscrire.',
-                components: [row]
-            });
-        } catch (error) {
-            console.error('Erreur mise à jour message:', error);
-        }
-    }
-}
-
 client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand()) {
-        if (interaction.commandName === 'add-team') {
-            const label = interaction.options.getString('label');
-            const role = interaction.options.getRole('role');
-
+        const command = commands.get(interaction.commandName);
+        if (command) {
             try {
-                await knex('teams').insert({ label: label, role_id: role.id });
-                await updateInscriptionMessages();
-                await interaction.reply({ content: `Équipe **${label}** ajoutée`, ephemeral: true });
+                await command.execute(interaction, knex, client);
             } catch (error) {
-                await interaction.reply({ content: `Erreur: ${error.message}`, ephemeral: true });
-            }
-        }
-
-        if (interaction.commandName === 'add-channel') {
-            const channel = interaction.options.getChannel('channel');
-
-            try {
-                await knex('trigger_channels').insert({ channel_id: channel.id });
-                await interaction.reply({ content: `Salon <#${channel.id}> ajouté`, ephemeral: true });
-            } catch (error) {
-                await interaction.reply({ content: `Erreur: ${error.message}`, ephemeral: true });
-            }
-        }
-
-        if (interaction.commandName === 'list-teams') {
-            const teams = await knex('teams').select('*');
-            if (teams.length === 0) {
-                await interaction.reply({ content: 'Aucune équipe', ephemeral: true });
-            } else {
-                const list = teams.map(t => `• **${t.label}** - <@&${t.role_id}>`).join('\n');
-                await interaction.reply({ content: `**Équipes:**\n${list}`, ephemeral: true });
-            }
-        }
-
-        if (interaction.commandName === 'list-channels') {
-            const channels = await knex('trigger_channels').select('*');
-            if (channels.length === 0) {
-                await interaction.reply({ content: 'Aucun salon', ephemeral: true });
-            } else {
-                const list = await Promise.all(channels.map(async (c) => {
-                    try {
-                        const channel = await interaction.guild.channels.fetch(c.channel_id);
-                        const categoryName = channel.parent ? ` - ${channel.parent.name}` : '';
-                        return `• <#${c.channel_id}>${categoryName}`;
-                    } catch {
-                        return `• <#${c.channel_id}>`;
-                    }
-                }));
-                await interaction.reply({ content: `**Salons:**\n${list.join('\n')}`, ephemeral: true });
-            }
-        }
-
-        if (interaction.commandName === 'remove-channel') {
-            const channel = interaction.options.getChannel('channel');
-
-            try {
-                const result = await knex('trigger_channels').where('channel_id', channel.id).delete();
-                if (result > 0) {
-                    await interaction.reply({ content: `Salon <#${channel.id}> supprimé`, ephemeral: true });
-                } else {
-                    await interaction.reply({ content: `Salon <#${channel.id}> non trouvé`, ephemeral: true });
-                }
-            } catch (error) {
-                await interaction.reply({ content: `Erreur: ${error.message}`, ephemeral: true });
-            }
-        }
-
-        if (interaction.commandName === 'remove-team') {
-            const label = interaction.options.getString('label');
-
-            try {
-                const result = await knex('teams').where('label', label).delete();
-                if (result > 0) {
-                    await updateInscriptionMessages();
-                    await interaction.reply({ content: `Équipe **${label}** supprimée`, ephemeral: true });
-                } else {
-                    await interaction.reply({ content: `Équipe **${label}** non trouvée`, ephemeral: true });
-                }
-            } catch (error) {
-                await interaction.reply({ content: `Erreur: ${error.message}`, ephemeral: true });
-            }
-        }
-
-        if (interaction.commandName === 'setup-inscription') {
-            const channel = interaction.options.getChannel('channel');
-            const roleInscrit = interaction.options.getRole('role_inscrit');
-
-            try {
-                const teams = await knex('teams').select('*');
-                if (teams.length === 0) {
-                    await interaction.reply({ content: 'Aucune équipe configurée', ephemeral: true });
-                    return;
-                }
-
-                const message = await createInscriptionMessage(channel);
-                if (message) {
-                    await knex('inscription_messages').insert({
-                        channel_id: channel.id,
-                        message_id: message.id,
-                        inscrit_role_id: roleInscrit ? roleInscrit.id : null
-                    });
-                    await interaction.reply({ content: `Formulaire envoyé dans <#${channel.id}>`, ephemeral: true });
-                }
-            } catch (error) {
-                await interaction.reply({ content: `Erreur: ${error.message}`, ephemeral: true });
+                console.error('Erreur commande:', error);
+                await interaction.reply({ content: 'Erreur lors de l\'exécution de la commande', ephemeral: true }).catch(console.error);
             }
         }
     }
@@ -319,6 +117,7 @@ client.on('interactionCreate', async interaction => {
                 .setCustomId(`modal_minecraft_pseudo_${selectedTeamId}`)
                 .setTitle('Inscription Minecraft');
 
+            const { ActionRowBuilder } = require('discord.js');
             const pseudoInput = new TextInputBuilder()
                 .setCustomId('pseudoInput')
                 .setLabel("Pseudo Minecraft")
@@ -332,43 +131,7 @@ client.on('interactionCreate', async interaction => {
         if (interaction.customId.startsWith('modal_minecraft_pseudo_')) {
             const selectedTeamId = interaction.customId.split('modal_minecraft_pseudo_')[1];
             const pseudo = interaction.fields.getTextInputValue('pseudoInput');
-            const discordId = interaction.user.id;
-
-            const team = await knex('teams').where('id', parseInt(selectedTeamId)).first();
-
-            if (team) {
-                try {
-                    await knex('users')
-                        .insert({ discord_id: discordId, minecraft_username: pseudo, team_id: team.id })
-                        .onConflict('discord_id')
-                        .merge();
-
-                    const inscriptionMsg = await knex('inscription_messages')
-                        .where('channel_id', interaction.channel.id)
-                        .first();
-
-                    const rolesToAdd = [];
-
-                    const teamRole = interaction.guild.roles.cache.get(team.role_id);
-                    if (teamRole) rolesToAdd.push(teamRole);
-
-                    if (inscriptionMsg && inscriptionMsg.inscrit_role_id) {
-                        const inscritRole = interaction.guild.roles.cache.get(inscriptionMsg.inscrit_role_id);
-                        if (inscritRole) rolesToAdd.push(inscritRole);
-                    }
-
-                    if (rolesToAdd.length > 0) {
-                        await interaction.member.roles.add(rolesToAdd);
-                        await interaction.reply({ content: `Inscrit dans **${team.label}** avec le pseudo **${pseudo}**`, ephemeral: true });
-                    } else {
-                        await interaction.reply({ content: `Erreur: Rôle introuvable`, ephemeral: true });
-                    }
-                } catch (err) {
-                    await interaction.reply({ content: `Erreur: ${err.message}`, ephemeral: true });
-                }
-            } else {
-                await interaction.reply({ content: `Erreur: Équipe invalide`, ephemeral: true });
-            }
+            await handleInscription(interaction, knex, selectedTeamId, pseudo);
         }
     }
 });
