@@ -4,6 +4,7 @@ const PT_TOKEN = process.env.PT_TOKEN;
 async function pterodactylRequest(endpoint, method = 'GET', body = null) {
     const apiPath = '/api/client';
     const url = `${PT_HOST}${apiPath}${endpoint}`;
+
     const token = PT_TOKEN;
 
     const options = {
@@ -48,4 +49,11 @@ async function getServerState(serverId) {
     return data.attributes.current_state;
 }
 
-module.exports = { sendMinecraftCommand, getServerState };
+
+async function getServers() {
+    const data = await pterodactylRequest(``);
+    return data.data;
+}
+
+
+module.exports = { sendMinecraftCommand, getServerState , getServers};

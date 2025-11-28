@@ -31,7 +31,7 @@ for (const file of commandFiles) {
 }
 
 const { handleInscription } = require('./utils/inscription-handler');
-const { sendMinecraftCommand} = require('./utils/pterodactyl');
+const { sendMinecraftCommand, getServerState } = require('./utils/pterodactyl');
 
 client.once('clientReady', async () => {
     try {
