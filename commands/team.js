@@ -117,7 +117,7 @@ module.exports = {
 
                 // 4. Créer le salon vocal
                 const voiceChannel = await interaction.guild.channels.create({
-                    name: 'Vocal',
+                    name: 'Créer un salon',
                     type: ChannelType.GuildVoice,
                     parent: category.id,
                 });
