@@ -78,6 +78,11 @@ module.exports = {
         if (subcommand === 'add') {
             const nom = interaction.options.getString('nom');
 
+            if (nom.length > 12) {
+                await interaction.reply({ content: `❌ Le nom de l'équipe ne peut pas dépasser 12 caractères (actuellement: ${nom.length})`, ephemeral: true });
+                return;
+            }
+
             try {
                 await interaction.deferReply();
 
