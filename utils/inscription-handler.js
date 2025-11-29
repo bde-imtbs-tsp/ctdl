@@ -12,6 +12,13 @@ async function handleInscription(interaction, knex, selectedTeamId, pseudo) {
         return;
     }
 
+    const existingPseudo = await knex('users').where('minecraft_username', pseudo).first();
+
+    if (existingPseudo) {
+        await interaction.reply({ content: `Ce pseudo est déjà pris`, ephemeral: true });
+        return;
+    }
+
     const team = await knex('teams').where('id', parseInt(selectedTeamId)).first();
 
     if (!team) {

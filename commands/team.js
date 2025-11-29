@@ -85,7 +85,7 @@ module.exports = {
             try {
                 await knex('teams').insert({ label: nom, role_id: role.id });
                 await updateInscriptionMessages(knex, client);
-                await interaction.reply({ content: `Équipe **${nom}** ajoutée`, ephemeral: true });
+                await interaction.reply({ content: `Équipe **${nom}** ajoutée` });
             } catch (error) {
                 await interaction.reply({ content: `Erreur: ${error.message}`, ephemeral: true });
             }
@@ -98,9 +98,9 @@ module.exports = {
                 const result = await knex('teams').where('label', nom).delete();
                 if (result > 0) {
                     await updateInscriptionMessages(knex, client);
-                    await interaction.reply({ content: `Équipe **${nom}** supprimée`, ephemeral: true });
+                    await interaction.reply({ content: `Équipe **${nom}** supprimée` });
                 } else {
-                    await interaction.reply({ content: `Équipe **${nom}** non trouvée`, ephemeral: true });
+                    await interaction.reply({ content: `Équipe **${nom}** non trouvée` });
                 }
             } catch (error) {
                 await interaction.reply({ content: `Erreur: ${error.message}`, ephemeral: true });

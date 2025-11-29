@@ -17,7 +17,11 @@ module.exports = {
                 .addUserOption(option =>
                     option.setName('utilisateur')
                         .setDescription('Utilisateur à désenregistrer')
-                        .setRequired(true))),
+                        .setRequired(true)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('stats')
+                .setDescription('Affiche les statistiques d\'inscription')),
 
     async execute(interaction, knex) {
         const subcommand = interaction.options.getSubcommand();
@@ -26,16 +30,63 @@ module.exports = {
             try {
                 const users = await knex('users')
                     .leftJoin('teams', 'users.team_id', 'teams.id')
-                    .select('users.discord_id', 'users.minecraft_username', 'users.password', 'teams.label as team_label');
+                    .select('users.discord_id', 'users.minecraft_username', 'users.password', 'teams.label as team_label')
+                    .orderBy('teams.label');
 
                 if (users.length === 0) {
                     await interaction.reply({ content: 'Aucun utilisateur inscrit', ephemeral: true });
                 } else {
-                    const list = users.map(u =>
-                        `• <@${u.discord_id}> - **${u.minecraft_username}** - Équipe: **${u.team_label || 'Aucune'}** - MDP: \`${u.password || 'N/A'}\``
-                    ).join('\n');
-                    await interaction.reply({ content: `**Utilisateurs inscrits:**\n${list}`, ephemeral: true });
+                    const usersByTeam = {};
+                    users.forEach(u => {
+                        const team = u.team_label || 'Sans équipe';
+                        if (!usersByTeam[team]) {
+                            usersByTeam[team] = [];
+                        }
+                        usersByTeam[team].push(u);
+                    });
+
+                    const sections = Object.keys(usersByTeam).map(team => {
+                        const teamUsers = usersByTeam[team].map(u =>
+                            `- <@${u.discord_id}> - **${u.minecraft_username}** - MDP: \`${u.password || 'N/A'}\``
+                        ).join('\n');
+                        return `**${team}**\n${teamUsers}`;
+                    });
+
+                    await interaction.reply({ content: `**Utilisateurs inscrits:**\n\n${sections.join('\n\n')}`, ephemeral: true });
                 }
+            } catch (error) {
+                await interaction.reply({ content: `Erreur: ${error.message}`, ephemeral: true });
+            }
+        }
+
+        if (subcommand === 'stats') {
+            try {
+                const users = await knex('users')
+                    .leftJoin('teams', 'users.team_id', 'teams.id')
+                    .select('users.discord_id', 'teams.label as team_label');
+
+                const inscriptionMsgs = await knex('inscription_messages').select('inscrit_role_id');
+                const inscritRoleIds = inscriptionMsgs.map(msg => msg.inscrit_role_id).filter(Boolean);
+
+                const statsByTeam = {};
+                users.forEach(u => {
+                    const team = u.team_label || 'Sans équipe';
+                    statsByTeam[team] = (statsByTeam[team] || 0) + 1;
+                });
+
+                const allMembers = await interaction.guild.members.fetch();
+                const nonInscrits = allMembers.filter(member => {
+                    const hasInscritRole = inscritRoleIds.some(roleId => member.roles.cache.has(roleId));
+                    return !hasInscritRole && !member.user.bot;
+                }).size;
+
+                const sections = Object.keys(statsByTeam).sort().map(team => {
+                    return `**${team}** : ${statsByTeam[team]}`;
+                });
+
+                sections.push(`**Non inscrits** : ${nonInscrits}`);
+
+                await interaction.reply({ content: `**Statistiques d'inscription:**\n\n${sections.join('\n')}` });
             } catch (error) {
                 await interaction.reply({ content: `Erreur: ${error.message}`, ephemeral: true });
             }
@@ -92,7 +143,7 @@ module.exports = {
                     await member.roles.remove(rolesToRemove);
                 }
 
-                await interaction.reply({ content: `Utilisateur <@${user.id}> (**${minecraftUsername}**) désenregistré`, ephemeral: true });
+                await interaction.reply({ content: `Utilisateur <@${user.id}> (**${minecraftUsername}**) désenregistré` });
             } catch (error) {
                 await interaction.reply({ content: `Erreur: ${error.message}`, ephemeral: true });
             }

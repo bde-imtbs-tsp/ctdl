@@ -52,7 +52,7 @@ module.exports = {
 
             try {
                 await knex('trigger_channels').insert({ channel_id: channel.id });
-                await interaction.reply({ content: `Salon <#${channel.id}> ajouté`, ephemeral: true });
+                await interaction.reply({ content: `Salon <#${channel.id}> ajouté` });
             } catch (error) {
                 await interaction.reply({ content: `Erreur: ${error.message}`, ephemeral: true });
             }
@@ -64,9 +64,9 @@ module.exports = {
             try {
                 const result = await knex('trigger_channels').where('channel_id', channel.id).delete();
                 if (result > 0) {
-                    await interaction.reply({ content: `Salon <#${channel.id}> supprimé`, ephemeral: true });
+                    await interaction.reply({ content: `Salon <#${channel.id}> supprimé` });
                 } else {
-                    await interaction.reply({ content: `Salon <#${channel.id}> non configuré`, ephemeral: true });
+                    await interaction.reply({ content: `Salon <#${channel.id}> non configuré` });
                 }
             } catch (error) {
                 await interaction.reply({ content: `Erreur: ${error.message}`, ephemeral: true });

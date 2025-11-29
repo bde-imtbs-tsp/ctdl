@@ -18,9 +18,9 @@ module.exports = {
             if (activeOption === null) {
                 const appState = await knex('app_state').first();
                 const status = appState && appState.release ? 'activé' : 'désactivé';
-                await interaction.reply({ content: `Mode release actuellement **${status}**`, ephemeral: true });
+                await interaction.reply({ content: `Mode release actuellement **${status}**` });
             } else if (activeOption === true) {
-                await interaction.deferReply({ ephemeral: true });
+                await interaction.deferReply();
 
                 const users = await knex('users').select('discord_id', 'password');
 
@@ -53,7 +53,7 @@ module.exports = {
                 await interaction.editReply({ content: message });
             } else {
                 await knex('app_state').update({ release: false });
-                await interaction.reply({ content: 'Mode release désactivé', ephemeral: true });
+                await interaction.reply({ content: 'Mode release désactivé' });
             }
         } catch (error) {
             await interaction.reply({ content: `Erreur: ${error.message}`, ephemeral: true }).catch(() => {
