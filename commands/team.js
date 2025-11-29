@@ -1,4 +1,5 @@
-const { SlashCommandBuilder, PermissionsBitField, ActionRowBuilder, StringSelectMenuBuilder } = require('discord.js');
+const { SlashCommandBuilder, PermissionsBitField, ActionRowBuilder, StringSelectMenuBuilder, ChannelType } = require('discord.js');
+const { sendMinecraftCommand } = require('../utils/pterodactyl');
 
 async function updateInscriptionMessages(knex, client) {
     const messages = await knex('inscription_messages').select('*');
@@ -51,10 +52,6 @@ module.exports = {
                 .addStringOption(option =>
                     option.setName('nom')
                         .setDescription('Nom de l\'équipe')
-                        .setRequired(true))
-                .addRoleOption(option =>
-                    option.setName('role')
-                        .setDescription('Rôle Discord')
                         .setRequired(true)))
         .addSubcommand(subcommand =>
             subcommand
@@ -80,14 +77,76 @@ module.exports = {
 
         if (subcommand === 'add') {
             const nom = interaction.options.getString('nom');
-            const role = interaction.options.getRole('role');
 
             try {
-                await knex('teams').insert({ label: nom, role_id: role.id });
+                await interaction.deferReply();
+
+                // 1. Créer le rôle Discord
+                const role = await interaction.guild.roles.create({
+                    name: nom,
+                    reason: `Création automatique pour l'équipe ${nom}`
+                });
+
+                // 2. Créer la catégorie privée
+                const category = await interaction.guild.channels.create({
+                    name: nom,
+                    type: ChannelType.GuildCategory,
+                    permissionOverwrites: [
+                        {
+                            id: interaction.guild.roles.everyone,
+                            deny: [PermissionsBitField.Flags.ViewChannel],
+                        },
+                        {
+                            id: role.id,
+                            allow: [PermissionsBitField.Flags.ViewChannel],
+                        }
+                    ],
+                });
+
+                // 3. Créer le salon textuel "général"
+                await interaction.guild.channels.create({
+                    name: 'général',
+                    type: ChannelType.GuildText,
+                    parent: category.id,
+                });
+
+                // 4. Créer le salon vocal
+                const voiceChannel = await interaction.guild.channels.create({
+                    name: 'Vocal',
+                    type: ChannelType.GuildVoice,
+                    parent: category.id,
+                });
+
+                // 5. Ajouter le salon vocal comme trigger channel
+                await knex('trigger_channels').insert({ channel_id: voiceChannel.id });
+
+                // 6. Enregistrer l'équipe en base de données
+                await knex('teams').insert({
+                    label: nom,
+                    role_id: role.id,
+                    category_id: category.id
+                });
+
+                // 7. Mettre à jour les messages d'inscription
                 await updateInscriptionMessages(knex, client);
-                await interaction.reply({ content: `Équipe **${nom}** ajoutée` });
+
+                // 8. Envoyer la commande Minecraft
+                try {
+                    await sendMinecraftCommand(process.env.PT_SERVER_ID, `teama add ${nom}`);
+                } catch (mcError) {
+                    console.error('Erreur commande Minecraft:', mcError);
+                }
+
+                await interaction.editReply({
+                    content: `✅ Équipe **${nom}** créée avec succès!\n` +
+                             `- Rôle: <@&${role.id}>\n` +
+                             `- Catégorie: ${category.name}\n` +
+                             `- Salon vocal ajouté comme trigger channel`
+                });
             } catch (error) {
-                await interaction.reply({ content: `Erreur: ${error.message}`, ephemeral: true });
+                console.error('Erreur création équipe:', error);
+                const replyMethod = interaction.deferred ? 'editReply' : 'reply';
+                await interaction[replyMethod]({ content: `Erreur: ${error.message}`, ephemeral: true });
             }
         }
 
