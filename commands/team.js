@@ -132,7 +132,7 @@ module.exports = {
 
                 // 8. Envoyer la commande Minecraft
                 try {
-                    await sendMinecraftCommand(process.env.PT_SERVER_ID, `teama add ${nom}`);
+                    await sendMinecraftCommand(process.env.PT_SERVER_ID, `teama create ${nom}`);
                 } catch (mcError) {
                     console.error('Erreur commande Minecraft:', mcError);
                 }
@@ -154,15 +154,122 @@ module.exports = {
             const nom = interaction.options.getString('nom');
 
             try {
-                const result = await knex('teams').where('label', nom).delete();
-                if (result > 0) {
-                    await updateInscriptionMessages(knex, client);
-                    await interaction.reply({ content: `Équipe **${nom}** supprimée` });
-                } else {
-                    await interaction.reply({ content: `Équipe **${nom}** non trouvée` });
+                await interaction.deferReply();
+
+                // 1. Récupérer les infos de l'équipe
+                const team = await knex('teams').where('label', nom).first();
+
+                if (!team) {
+                    await interaction.editReply({ content: `Équipe **${nom}** non trouvée` });
+                    return;
                 }
+
+                // 2. Désincrire tous les utilisateurs de l'équipe
+                const teamUsers = await knex('users').where('team_id', team.id).select('*');
+                const inscriptionMsgs = await knex('inscription_messages').select('inscrit_role_id');
+                const inscritRoleIds = inscriptionMsgs.map(msg => msg.inscrit_role_id).filter(Boolean);
+
+                for (const user of teamUsers) {
+                    try {
+                        // Retirer les rôles Discord
+                        const member = await interaction.guild.members.fetch(user.discord_id);
+                        if (member) {
+                            const rolesToRemove = [];
+
+                            // Rôle de l'équipe
+                            const teamRole = interaction.guild.roles.cache.get(team.role_id);
+                            if (teamRole && member.roles.cache.has(teamRole.id)) {
+                                rolesToRemove.push(teamRole);
+                            }
+
+                            // Rôle(s) "inscrit"
+                            inscritRoleIds.forEach(roleId => {
+                                const inscritRole = interaction.guild.roles.cache.get(roleId);
+                                if (inscritRole && member.roles.cache.has(inscritRole.id)) {
+                                    rolesToRemove.push(inscritRole);
+                                }
+                            });
+
+                            if (rolesToRemove.length > 0) {
+                                await member.roles.remove(rolesToRemove);
+                            }
+                        }
+
+                        // Désincrire sur Minecraft
+                        await sendMinecraftCommand(process.env.PT_SERVER_ID, `authme unregister ${user.minecraft_username}`);
+                        await sendMinecraftCommand(process.env.PT_SERVER_ID, `tteamunregister ${user.minecraft_username}`);
+                    } catch (userError) {
+                        console.error(`Erreur désinscription ${user.minecraft_username}:`, userError);
+                    }
+                }
+
+                // Supprimer les utilisateurs de la BDD
+                await knex('users').where('team_id', team.id).delete();
+
+                // 3. Supprimer la catégorie et tous ses canaux (si elle existe)
+                if (team.category_id) {
+                    try {
+                        const category = await interaction.guild.channels.fetch(team.category_id);
+                        if (category) {
+                            // Récupérer tous les canaux de la catégorie
+                            const channelsInCategory = interaction.guild.channels.cache.filter(
+                                ch => ch.parentId === category.id
+                            );
+
+                            // Supprimer les trigger channels de la BDD d'abord
+                            for (const [, channel] of channelsInCategory) {
+                                if (channel.type === ChannelType.GuildVoice) {
+                                    await knex('trigger_channels').where('channel_id', channel.id).delete();
+                                }
+                            }
+
+                            // Ensuite supprimer les canaux Discord
+                            for (const [, channel] of channelsInCategory) {
+                                await channel.delete();
+                            }
+
+                            // Supprimer la catégorie
+                            await category.delete();
+                        }
+                    } catch (channelError) {
+                        console.error('Erreur suppression catégorie:', channelError);
+                    }
+                }
+
+                // 4. Supprimer le rôle Discord
+                try {
+                    const role = await interaction.guild.roles.fetch(team.role_id);
+                    if (role) {
+                        await role.delete();
+                    }
+                } catch (roleError) {
+                    console.error('Erreur suppression rôle:', roleError);
+                }
+
+                // 5. Supprimer l'équipe de la base de données
+                await knex('teams').where('label', nom).delete();
+
+                // 6. Mettre à jour les messages d'inscription
+                await updateInscriptionMessages(knex, client);
+
+                // 7. Envoyer la commande Minecraft
+                try {
+                    await sendMinecraftCommand(process.env.PT_SERVER_ID, `teama disband ${nom}`);
+                } catch (mcError) {
+                    console.error('Erreur commande Minecraft:', mcError);
+                }
+
+                await interaction.editReply({
+                    content: `✅ Équipe **${nom}** supprimée avec succès!\n` +
+                             `- ${teamUsers.length} utilisateur(s) désinscrit(s)\n` +
+                             `- Rôle supprimé\n` +
+                             `- Catégorie et canaux supprimés\n` +
+                             `- Trigger channels retirés de la BDD`
+                });
             } catch (error) {
-                await interaction.reply({ content: `Erreur: ${error.message}`, ephemeral: true });
+                console.error('Erreur suppression équipe:', error);
+                const replyMethod = interaction.deferred ? 'editReply' : 'reply';
+                await interaction[replyMethod]({ content: `Erreur: ${error.message}`, ephemeral: true });
             }
         }
     }
