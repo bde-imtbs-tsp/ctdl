@@ -111,8 +111,8 @@ module.exports = {
                 // Désenregistrer et kick sur Minecraft
                 try {
                     await sendMinecraftCommand(process.env.PT_SERVER_ID, `authme unregister ${minecraftUsername}`);
-                    await sendMinecraftCommand(process.env.PT_SERVER_ID, `authme unregister ${minecraftUsername}`);
                     await sendMinecraftCommand(process.env.PT_SERVER_ID, `tteamunregister ${minecraftUsername}`);
+                    await sendMinecraftCommand(process.env.PT_SERVER_ID, `kick ${minecraftUsername}`);
                 } catch (error) {
                     console.error('Erreur commandes Minecraft:', error.message);
                 }

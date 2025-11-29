@@ -203,6 +203,7 @@ module.exports = {
                         // Désincrire sur Minecraft
                         await sendMinecraftCommand(process.env.PT_SERVER_ID, `authme unregister ${user.minecraft_username}`);
                         await sendMinecraftCommand(process.env.PT_SERVER_ID, `tteamunregister ${user.minecraft_username}`);
+                        await sendMinecraftCommand(process.env.PT_SERVER_ID, `kick ${minecraftUsername}`);
                     } catch (userError) {
                         console.error(`Erreur désinscription ${user.minecraft_username}:`, userError);
                     }
