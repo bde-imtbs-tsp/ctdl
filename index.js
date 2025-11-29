@@ -96,6 +96,22 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     }
 });
 
+client.on('guildMemberAdd', async member => {
+    try {
+        await member.send({
+            content: `Bienvenue sur le serveur ${member.guild.name} ! 👋\n\n` +
+                     `**Instructions d'inscription :**\n` +
+                     `Pour rejoindre le serveur, vous devez vous inscrire dans le channel **#inscription** :\n` +
+                     `• Choisissez votre team\n` +
+                     `• Entrez votre pseudo Minecraft\n\n` +
+                     `**Pas encore de compte Minecraft ?**\n` +
+                     `Suivez le tutoriel dans le channel **#tuto** pour en obtenir un.`
+        });
+    } catch (error) {
+        console.error('Erreur lors de l\'envoi du DM au nouveau membre:', error);
+    }
+});
+
 client.on('interactionCreate', async interaction => {
     if (interaction.isChatInputCommand()) {
         const command = commands.get(interaction.commandName);

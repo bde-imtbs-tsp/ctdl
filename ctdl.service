@@ -1,0 +1,17 @@
+[Unit]
+Description=CTDL Discord Bot
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/root/ctdl
+ExecStart=/root/.nvm/versions/node/v22.21.1/bin/node  index.js
+Restart=always
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ctdl
+
+[Install]
+WantedBy=multi-user.target
