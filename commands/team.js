@@ -60,7 +60,11 @@ module.exports = {
                 .addStringOption(option =>
                     option.setName('nom')
                         .setDescription('Nom de l\'équipe')
-                        .setRequired(true))),
+                        .setRequired(true)))
+        .addSubcommand(subcommand =>
+            subcommand
+                .setName('stats')
+                .setDescription('Affiche les statistiques d\'inscription')),
 
     async execute(interaction, knex, client) {
         const subcommand = interaction.options.getSubcommand();
@@ -276,6 +280,47 @@ module.exports = {
                 console.error('Erreur suppression équipe:', error);
                 const replyMethod = interaction.deferred ? 'editReply' : 'reply';
                 await interaction[replyMethod]({ content: `Erreur: ${error.message}`, ephemeral: true });
+            }
+        }
+
+        if (subcommand === 'stats') {
+            try {
+                const users = await knex('users')
+                    .leftJoin('teams', 'users.team_id', 'teams.id')
+                    .select('users.discord_id', 'teams.label as team_label', 'teams.role_id as team_role_id');
+
+                const inscriptionMsgs = await knex('inscription_messages').select('inscrit_role_id');
+                const inscritRoleIds = inscriptionMsgs.map(msg => msg.inscrit_role_id).filter(Boolean);
+
+                const statsByTeam = {};
+                users.forEach(u => {
+                    const teamKey = u.team_label || 'Sans équipe';
+                    if (!statsByTeam[teamKey]) {
+                        statsByTeam[teamKey] = {
+                            count: 0,
+                            roleId: u.team_role_id
+                        };
+                    }
+                    statsByTeam[teamKey].count++;
+                });
+
+                const allMembers = await interaction.guild.members.fetch();
+                const nonInscrits = allMembers.filter(member => {
+                    const hasInscritRole = inscritRoleIds.some(roleId => member.roles.cache.has(roleId));
+                    return !hasInscritRole && !member.user.bot;
+                }).size;
+
+                const sections = Object.keys(statsByTeam).sort().map(team => {
+                    const teamData = statsByTeam[team];
+                    const teamDisplay = teamData.roleId ? `<@&${teamData.roleId}>` : `**${team}**`;
+                    return `${teamDisplay} : ${teamData.count}`;
+                });
+
+                sections.push(`**Non inscrits** : ${nonInscrits}`);
+
+                await interaction.reply({ content: `**Statistiques d'inscription:**\n\n${sections.join('\n')}` });
+            } catch (error) {
+                await interaction.reply({ content: `Erreur: ${error.message}`, ephemeral: true });
             }
         }
     }
