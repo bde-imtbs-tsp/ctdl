@@ -12,6 +12,14 @@ module.exports = {
                 .setDescription('Liste les utilisateurs inscrits'))
         .addSubcommand(subcommand =>
             subcommand
+                .setName('info')
+                .setDescription('Affiche les infos d\'un utilisateur')
+                .addUserOption(option =>
+                    option.setName('utilisateur')
+                        .setDescription('Utilisateur à consulter')
+                        .setRequired(true)))
+        .addSubcommand(subcommand =>
+            subcommand
                 .setName('unregister')
                 .setDescription('Désenregistre un utilisateur')
                 .addUserOption(option =>
@@ -73,6 +81,37 @@ module.exports = {
                         await interaction.followUp({ content: messages[i], ephemeral: true });
                     }
                 }
+            } catch (error) {
+                await interaction.reply({ content: `Erreur: ${error.message}`, ephemeral: true });
+            }
+        }
+
+        if (subcommand === 'info') {
+            const user = interaction.options.getUser('utilisateur');
+
+            try {
+                const userData = await knex('users')
+                    .leftJoin('teams', 'users.team_id', 'teams.id')
+                    .where('users.discord_id', user.id)
+                    .select('users.minecraft_username', 'users.password', 'teams.label as team_label', 'teams.role_id as team_role_id')
+                    .first();
+
+                if (!userData) {
+                    await interaction.reply({ content: `Utilisateur <@${user.id}> non inscrit`, ephemeral: true });
+                    return;
+                }
+
+                const teamDisplay = userData.team_role_id
+                    ? `<@&${userData.team_role_id}>`
+                    : userData.team_label || 'Sans équipe';
+
+                await interaction.reply({
+                    content: `**Informations de <@${user.id}>**\n\n` +
+                             `**Équipe:** ${teamDisplay}\n` +
+                             `**Pseudo Minecraft:** ${userData.minecraft_username}\n` +
+                             `**Mot de passe:** \`${userData.password || 'N/A'}\``,
+                    ephemeral: true
+                });
             } catch (error) {
                 await interaction.reply({ content: `Erreur: ${error.message}`, ephemeral: true });
             }
