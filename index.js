@@ -63,16 +63,24 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
         const category = triggerChannel.parent;
 
         try {
+            // Récupérer les permissions de la catégorie
+            const categoryPermissions = category.permissionOverwrites.cache.map(overwrite => ({
+                id: overwrite.id,
+                allow: overwrite.allow.bitfield,
+                deny: overwrite.deny.bitfield
+            }));
+
+            // Ajouter les permissions du créateur
+            categoryPermissions.push({
+                id: member.id,
+                allow: [PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.MuteMembers, PermissionsBitField.Flags.DeafenMembers],
+            });
+
             const newChannel = await guild.channels.create({
                 name: `Salon de ${member.displayName}`,
                 type: ChannelType.GuildVoice,
                 parent: category,
-                permissionOverwrites: [
-                    {
-                        id: member.id,
-                        allow: [PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.MuteMembers, PermissionsBitField.Flags.DeafenMembers],
-                    }
-                ],
+                permissionOverwrites: categoryPermissions,
             });
 
             await member.voice.setChannel(newChannel);
