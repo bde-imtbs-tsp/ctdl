@@ -71,10 +71,6 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
                     {
                         id: member.id,
                         allow: [PermissionsBitField.Flags.ManageChannels, PermissionsBitField.Flags.MuteMembers, PermissionsBitField.Flags.DeafenMembers],
-                    },
-                    {
-                        id: guild.roles.everyone,
-                        deny: [PermissionsBitField.Flags.ViewChannel],
                     }
                 ],
             });
